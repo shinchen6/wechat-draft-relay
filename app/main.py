@@ -1,10 +1,21 @@
 """微信草稿 relay：微信接口的纯代理（零三方依赖，仅用标准库）。
 
-端点：
+端点（均受 X-API-Key 保护，若配置了 RELAY_API_KEY）：
   GET  /health          健康检查（含当前鉴权模式）
   POST /material        上传图片到素材库 -> {"media_id":..., "url":...}
   POST /draft           创建草稿 -> {"media_id":...}
   POST /draft-delete    删除草稿 -> {"errcode":0, "errmsg":"ok"}
+
+  # 查询类（诊断用，原样透传微信响应，含 errcode）
+  POST /draft-list      草稿列表 -> draft/batchget
+  POST /draft-get       回读单篇草稿 -> draft/get
+  POST /draft-count     草稿总数 -> draft/count
+  POST /draft-update    修改草稿 -> draft/update
+  POST /draft-switch    草稿箱/发布开关 -> draft/switch
+  POST /published-list  已发布列表 -> freepublish/batchget
+  POST /stats-user      用户增减 -> datacube/getusersummary
+  POST /stats-article   图文阅读 -> datacube/getuserread
+  POST /comment-list    留言列表 -> comment/list
 
 /material  JSON: {"name": "img/body1.png", "data_b64": "..."}
   -> {"media_id": "...", "url": "https://mmbiz.qpic.cn/..."}
@@ -13,7 +24,9 @@
                "thumb_media_id": "...", "author": "", "digest": ""}
   -> {"media_id": "..."}
 
-两个写接口都受 X-API-Key 保护（若配置了 RELAY_API_KEY）。
+写接口 + 查询接口都走云调用（开放接口服务）免鉴权。
+注意：freepublish/datacube/comment 部分接口可能不支持云调用，
+需在云托管「微信令牌」权限中授权对应路径，部署后实测。
 markdown -> HTML 的转换在客户端（skill）完成，relay 不碰 markdown。
 """
 import base64
@@ -60,6 +73,59 @@ def _delete_draft(payload: dict) -> dict:
     return wechat.delete_draft(media_id)
 
 
+# ── 查询类处理器（诊断用，原样透传微信响应）──────────────────────────
+def _list_drafts(payload: dict) -> dict:
+    return wechat.list_drafts(payload.get("offset", 0), payload.get("count", 20),
+                              payload.get("no_content", 1))
+
+def _get_draft(payload: dict) -> dict:
+    return wechat.get_draft((payload.get("media_id") or "").strip())
+
+def _count_drafts(payload: dict) -> dict:
+    return wechat.count_drafts()
+
+def _update_draft(payload: dict) -> dict:
+    return wechat.update_draft(
+        (payload.get("media_id") or "").strip(),
+        payload.get("articles") or {},
+        payload.get("index", 0),
+    )
+
+def _draft_switch(payload: dict) -> dict:
+    status = payload.get("status")
+    if status is None:
+        return wechat.set_draft_switch()
+    return wechat.set_draft_switch(int(status))
+
+def _list_published(payload: dict) -> dict:
+    return wechat.list_published(payload.get("offset", 0), payload.get("count", 20))
+
+def _stats_user(payload: dict) -> dict:
+    return wechat.get_user_summary(payload.get("begin_date", ""), payload.get("end_date", ""))
+
+def _stats_article(payload: dict) -> dict:
+    return wechat.get_user_read(payload.get("begin_date", ""), payload.get("end_date", ""))
+
+def _comment_list(payload: dict) -> dict:
+    return wechat.list_comments(
+        (payload.get("msg_data_id") or "").strip(),
+        payload.get("index", 0), payload.get("begin", 0), payload.get("count", 20),
+    )
+
+# 路径 -> 查询处理器
+_QUERY_ROUTES = {
+    "/draft-list": _list_drafts,
+    "/draft-get": _get_draft,
+    "/draft-count": _count_drafts,
+    "/draft-update": _update_draft,
+    "/draft-switch": _draft_switch,
+    "/published-list": _list_published,
+    "/stats-user": _stats_user,
+    "/stats-article": _stats_article,
+    "/comment-list": _comment_list,
+}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "wechat-draft-relay/1.0"
 
@@ -85,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/material", "/draft", "/draft-delete"):
+        if path not in ("/material", "/draft", "/draft-delete") and path not in _QUERY_ROUTES:
             self._send_json(404, {"ok": False, "error": "not found"})
             return
 
@@ -102,8 +168,10 @@ class Handler(BaseHTTPRequestHandler):
                 result = _upload_material(payload)
             elif path == "/draft":
                 result = _create_draft(payload)
-            else:
+            elif path == "/draft-delete":
                 result = _delete_draft(payload)
+            else:
+                result = _QUERY_ROUTES[path](payload)
             self._send_json(200, result)
         except Exception as e:  # noqa: BLE001
             self._send_json(500, {"ok": False, "error": str(e)})

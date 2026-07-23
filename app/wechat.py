@@ -173,3 +173,82 @@ def delete_draft(media_id: str) -> dict:
     if data.get("errcode"):
         _raise("草稿删除", data)
     return data
+
+
+# ── 查询类接口（诊断用）──────────────────────────────────────────────
+# 统一返回微信原始响应（含 errcode/errmsg），由调用方判断是否成功；
+# 不在此层 _raise，便于把错误原样透传给诊断端展示。
+
+def _raw_post(path: str, payload: dict) -> dict:
+    return _request_json(
+        _url(path, _auth_params()),
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        timeout=30,
+    )
+
+
+def list_drafts(offset: int = 0, count: int = 20, no_content: int = 1) -> dict:
+    """草稿列表。no_content=1 时只取元信息（media_id/标题/更新时间），不拉正文。"""
+    return _raw_post("/cgi-bin/draft/batchget",
+                     {"offset": offset, "count": count, "no_content": no_content})
+
+
+def get_draft(media_id: str) -> dict:
+    """回读单篇草稿完整内容（正文 HTML / 摘要 / 封面）。"""
+    if not media_id:
+        raise ValueError("media_id 不能为空")
+    return _raw_post("/cgi-bin/draft/get", {"media_id": media_id})
+
+
+def count_drafts() -> dict:
+    """草稿总数。"""
+    return _raw_post("/cgi-bin/draft/count", {})
+
+
+def update_draft(media_id: str, articles: dict, index: int = 0) -> dict:
+    """修改草稿（标题/正文/封面/摘要）。articles 为单篇图文 dict。"""
+    if not media_id:
+        raise ValueError("media_id 不能为空")
+    if not articles:
+        raise ValueError("articles 不能为空")
+    return _raw_post("/cgi-bin/draft/update",
+                     {"media_id": media_id, "index": index, "articles": articles})
+
+
+def set_draft_switch(status: int | None = None) -> dict:
+    """草稿箱/发布开关：status=0 关 / 1 开；不传 status 则返回当前开关状态。"""
+    if status is None:
+        return _raw_post("/cgi-bin/draft/switch", {})
+    return _raw_post("/cgi-bin/draft/switch", {"status": status})
+
+
+def list_published(offset: int = 0, count: int = 20) -> dict:
+    """已发布消息列表（freepublish/batchget）。item 含 msg_data_id / 标题 / 永久链接。"""
+    return _raw_post("/cgi-bin/freepublish/batchget", {"offset": offset, "count": count})
+
+
+def get_user_summary(begin: str, end: str) -> dict:
+    """用户增减数据（datacube/getusersummary）。begin/end: YYYY-MM-DD，最长 7 天窗口。"""
+    return _raw_post("/cgi-bin/datacube/getusersummary",
+                     {"begin_date": begin, "end_date": end})
+
+
+def get_user_read(begin: str, end: str) -> dict:
+    """图文阅读关键数据（datacube/getuserread）。最长 3 天窗口。"""
+    return _raw_post("/cgi-bin/datacube/getuserread",
+                     {"begin_date": begin, "end_date": end})
+
+
+def get_article_total(begin: str, end: str) -> dict:
+    """图文群发总数据（datacube/getarticletotal）。"""
+    return _raw_post("/cgi-bin/datacube/getarticletotal",
+                     {"begin_date": begin, "end_date": end})
+
+
+def list_comments(msg_data_id: str, index: int = 0, begin: int = 0, count: int = 20) -> dict:
+    """留言列表（comment/list）。msg_data_id 来自 freepublish/batchget 的 item.msg_data_id。"""
+    if not msg_data_id:
+        raise ValueError("msg_data_id 不能为空")
+    return _raw_post("/cgi-bin/comment/list",
+                     {"msg_data_id": msg_data_id, "index": index, "begin": begin, "count": count})

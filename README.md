@@ -4,16 +4,17 @@
 利用官方「开放接口服务（云调用）」免鉴权调用公众号接口——本地脚本无需固定 IP、无需公众号 appid/secret。
 
 - 客户端（skill）负责写稿、把 Markdown 转成微信图文 HTML、处理图片；
-- relay 只做一件事：把内容转交给微信接口（`/cgi-bin/material/add_material` 上传素材、`/cgi-bin/draft/add` 建草稿、`/cgi-bin/draft/delete` 删草稿）。
+- relay 把内容转交给微信接口（`/cgi-bin/material/add_material` 上传素材、`/cgi-bin/draft/add` 建草稿、`/cgi-bin/draft/delete` 删草稿）；
+- 另外提供**查询类接口**（草稿列表/回读/计数、已发布列表、用户增减、图文阅读、留言），用于公众号全量数据诊断；
 - relay 零三方依赖，只依赖 Python 标准库。
 
 ## 架构
 
 ```
-本地写稿脚本 (skill)
-   │  POST /material (图片 base64)  ─┐
-   │  POST /draft  (title, html, thumb) ─┤→ 微信接口（云调用免鉴权）
-   ▼                                    │
+本地写稿脚本 / 诊断脚本 (skill)
+   │  写接口: POST /material  POST /draft  POST /draft-delete   ─┐
+   │  查接口: POST /draft-list /published-list /stats-* /comment-list ─┤→ 微信接口（云调用免鉴权）
+   ▼                                                          │
 部署在微信云托管的 relay（本仓库）
         （默认公网访问地址，靠 RELAY_API_KEY 保护）
 ```
@@ -27,6 +28,9 @@ relay **不解析 Markdown**，不生成 HTML——这些都在客户端完成�
    - `/cgi-bin/material/add_material`
    - `/cgi-bin/draft/add`
    - `/cgi-bin/draft/delete`（删除草稿功能需要）
+   - 查询/诊断接口按需加入：`/cgi-bin/draft/batchget`、`/cgi-bin/draft/get`、`/cgi-bin/draft/count`、`/cgi-bin/draft/update`、`/cgi-bin/draft/switch`、`/cgi-bin/freepublish/batchget`、`/cgi-bin/datacube/getusersummary`、`/cgi-bin/datacube/getuserread`、`/cgi-bin/datacube/getarticletotal`、`/cgi-bin/comment/list`
+   - ⚠️ `freepublish` / `datacube` / `comment` 部分接口**可能不支持云调用**：若实测返回 `48001` 且该接口明确不支持云调用，则需 relay 切换到 token 模式（填 `WX_APPID`/`WX_APPSECRET`，回到 IP 白名单）。`draft/*` 全套均支持云调用（已验证 `draft/add`）。
+   - 改完权限后务必**重建版本**（开放接口服务开关「开关前建的版本不生效」）。
 3. **环境变量**：
    - `RELAY_API_KEY`：必填，relay 自身访问密钥，用于保护公网接口。
    - `WX_APPID` / `WX_APPSECRET`：**留空**。云托管绑定公众号并开启开放接口服务后，平台自动注入鉴权，无需填写。
@@ -95,6 +99,25 @@ relay **不解析 Markdown**，不生成 HTML——这些都在客户端完成�
 ```json
 { "errcode": 0, "errmsg": "ok" }
 ```
+
+### 查询类接口（诊断用）
+
+以下接口原样透传微信响应（含 `errcode`/`errmsg`），由客户端判断是否成功。请求头同样需 `X-API-Key`。
+
+| 端点              | 对应微信接口                      | 请求体（JSON）要点                                  |
+| ----------------- | ------------------------------- | ------------------------------------------------- |
+| `POST /draft-list`   | `draft/batchget`                | `{"offset":0,"count":20,"no_content":1}`          |
+| `POST /draft-get`    | `draft/get`                     | `{"media_id":"..."}`                              |
+| `POST /draft-count`  | `draft/count`                   | `{}`                                               |
+| `POST /draft-update` | `draft/update`                  | `{"media_id":"...","index":0,"articles":{...}}`   |
+| `POST /draft-switch` | `draft/switch`                  | `{}` 查状态 / `{"status":1}` 开关                  |
+| `POST /published-list` | `freepublish/batchget`       | `{"offset":0,"count":20}`                          |
+| `POST /stats-user`    | `datacube/getusersummary`     | `{"begin_date":"2026-07-16","end_date":"2026-07-22"}`（≤7天） |
+| `POST /stats-article` | `datacube/getuserread`        | `{"begin_date":"...","end_date":"..."}`（≤3天）   |
+| `POST /comment-list`  | `comment/list`                 | `{"msg_data_id":"...","index":0,"begin":0,"count":20}` |
+
+> `published-list` 返回的 `msg_data_id` 可作为 `comment-list` 的 `msg_data_id` 查询某篇文章留言。
+> `stats-*` 日期窗口有限制（用户增减 ≤7 天、图文阅读 ≤3 天），跨更长区间需多次调用拼接。
 
 ## 错误码
 
