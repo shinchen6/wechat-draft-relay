@@ -5,7 +5,7 @@
 
 - 客户端（skill）负责写稿、把 Markdown 转成微信图文 HTML、处理图片；
 - relay 把内容转交给微信接口（`/cgi-bin/material/add_material` 上传素材、`/cgi-bin/draft/add` 建草稿、`/cgi-bin/draft/delete` 删草稿）；
-- 另外提供**查询类接口**（草稿列表/回读/计数、已发布列表、用户增减、图文阅读、留言），用于公众号全量数据诊断；
+- 另外提供**查询类接口**（草稿列表/回读/计数、已发布列表、用户增减、图文阅读、留言），用于草稿箱全生命周期诊断；
 - relay 零三方依赖，只依赖 Python 标准库。
 
 ## 架构
@@ -29,7 +29,7 @@ relay **不解析 Markdown**，不生成 HTML——这些都在客户端完成�
    - `/cgi-bin/draft/add`
    - `/cgi-bin/draft/delete`（删除草稿功能需要）
    - 查询/诊断接口按需加入：`/cgi-bin/draft/batchget`、`/cgi-bin/draft/get`、`/cgi-bin/draft/count`、`/cgi-bin/draft/update`、`/cgi-bin/draft/switch`、`/cgi-bin/freepublish/batchget`、`/cgi-bin/datacube/getusersummary`、`/cgi-bin/datacube/getuserread`、`/cgi-bin/datacube/getarticletotal`、`/cgi-bin/comment/list`
-   - ⚠️ `freepublish` / `datacube` / `comment` 部分接口**可能不支持云调用**：若实测返回 `48001` 且该接口明确不支持云调用，则需 relay 切换到 token 模式（填 `WX_APPID`/`WX_APPSECRET`，回到 IP 白名单）。`draft/*` 全套均支持云调用（已验证 `draft/add`）。
+   - ⚠️ `freepublish` / `datacube` / `comment` 三类接口**实测确认不支持云调用**（freepublish→`48001`、datacube→`404`、comment→`48001`）：需 relay 切换到 token 模式（填 `WX_APPID`/`WX_APPSECRET`，回到 IP 白名单）才能用。`draft/*` 全套 + `material` 均支持云调用（已验证 `draft/add`、`draft/batchget`、`draft/get`、`draft/count`）。
    - 改完权限后务必**重建版本**（开放接口服务开关「开关前建的版本不生效」）。
 3. **环境变量**：
    - `RELAY_API_KEY`：必填，relay 自身访问密钥，用于保护公网接口。
@@ -119,6 +119,9 @@ relay **不解析 Markdown**，不生成 HTML——这些都在客户端完成�
 > `published-list` 返回的 `msg_data_id` 可作为 `comment-list` 的 `msg_data_id` 查询某篇文章留言。
 > `stats-*` 日期窗口有限制（用户增减 ≤7 天、图文阅读 ≤3 天），跨更长区间需多次调用拼接。
 
+> ✅ **已实测可用（云调用）**：`/draft-list`、`/draft-get`、`/draft-count`、`/draft-update`、`/draft-switch` 与写接口（`/material`、`/draft`、`/draft-delete`）。
+> ❌ **实测不可用（云调用，需 token 模式）**：`/published-list`（freepublish→48001）、`/stats-user`、`/stats-article`（datacube→404）、`/comment-list`（comment→48001）。
+
 ## 错误码
 
 | errcode           | 含义                | 处理                       |
@@ -133,7 +136,8 @@ relay **不解析 Markdown**，不生成 HTML——这些都在客户端完成�
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt   # 空文件，relay 无三方依赖
 cp .env.example .env              # 填 RELAY_API_KEY、WX_CLOUDCALL=1
 python -m app.main
 ```
+
+relay 零三方依赖（仅 Python 标准库），无需 `pip install` 任何包。
