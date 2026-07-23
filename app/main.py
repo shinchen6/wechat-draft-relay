@@ -18,12 +18,9 @@ markdown -> HTML 的转换在客户端（skill）完成，relay 不碰 markdown�
 """
 import base64
 import json
-import os
-import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import config, wechat
 
 

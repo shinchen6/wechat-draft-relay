@@ -1,6 +1,9 @@
-FROM python:3.11-slim
+FROM python:3.11-alpine
 
 WORKDIR /app
+
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
 
 COPY app ./app
 
