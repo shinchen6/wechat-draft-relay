@@ -4,7 +4,7 @@
 利用官方「开放接口服务（云调用）」免鉴权调用公众号接口——本地脚本无需固定 IP、无需公众号 appid/secret。
 
 - 客户端（skill）负责写稿、把 Markdown 转成微信图文 HTML、处理图片；
-- relay 只做一件事：把内容转交给微信接口（`/cgi-bin/material/add_material` 上传素材、`/cgi-bin/draft/add` 建草稿）。
+- relay 只做一件事：把内容转交给微信接口（`/cgi-bin/material/add_material` 上传素材、`/cgi-bin/draft/add` 建草稿、`/cgi-bin/draft/delete` 删草稿）。
 - relay 零三方依赖，只依赖 Python 标准库。
 
 ## 架构
