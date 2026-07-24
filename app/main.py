@@ -39,6 +39,9 @@ from urllib.parse import urlparse
 
 from app import config, wechat
 
+# 版本标记：推到 main 触发云托管重新部署后，可用 GET /health 的 version 字段确认新版本已上线。
+VERSION = "1.0.1"
+
 
 def _upload_material(payload: dict) -> dict:
     name = payload.get("name") or "img.png"
@@ -147,6 +150,7 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path in ("/", "/health"):
             self._send_json(200, {
                 "ok": True,
+                "version": VERSION,
                 "mode": "cloudcall" if config.WX_CLOUDCALL else "token",
             })
         else:
