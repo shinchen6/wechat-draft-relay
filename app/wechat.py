@@ -188,6 +188,30 @@ def _raw_post(path: str, payload: dict) -> dict:
     )
 
 
+def proxy_post(path: str, payload: dict) -> dict:
+    """通用云调用代理（诊断/测试用）：原样转发到 api.weixin.qq.com/<path>，
+    返回 {'http_status': int, 'body': <解析后的 dict 或原始文本>}。
+    不在此层 _raise：任何 errcode / 非 200 都原样返回，便于测试端判断接口是否可达/已授权。
+    """
+    url = _url(path, _auth_params())
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            status = resp.status
+    except urllib.error.HTTPError as e:  # 微信常用非 200 返回错误体
+        raw = e.read()
+        status = e.code
+    try:
+        body = json.loads(raw.decode("utf-8", "replace"))
+    except Exception:
+        body = raw.decode("utf-8", "replace")
+    return {"http_status": status, "body": body}
+
+
 def list_drafts(offset: int = 0, count: int = 20, no_content: int = 1) -> dict:
     """草稿列表。no_content=1 时只取元信息（media_id/标题/更新时间），不拉正文。"""
     return _raw_post("/cgi-bin/draft/batchget",

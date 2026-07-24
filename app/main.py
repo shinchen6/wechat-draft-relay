@@ -17,6 +17,9 @@
   POST /stats-article   图文阅读 -> datacube/getuserread
   POST /comment-list    留言列表 -> comment/list
 
+  POST /cgi-bin/<path>  通用云调用代理（诊断/测试用）：原样转发到 api.weixin.qq.com/<path>，
+              返回 {'http_status':..., 'body':...}。需在「微信令牌」权限配置中加入对应路径才可用。
+
 /material  JSON: {"name": "img/body1.png", "data_b64": "..."}
   -> {"media_id": "...", "url": "https://mmbiz.qpic.cn/..."}
 
@@ -151,9 +154,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/material", "/draft", "/draft-delete") and path not in _QUERY_ROUTES:
-            self._send_json(404, {"ok": False, "error": "not found"})
-            return
 
         key = self.headers.get("X-API-Key")
         if config.RELAY_API_KEY and key != config.RELAY_API_KEY:
@@ -164,6 +164,16 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             payload = json.loads(raw.decode("utf-8"))
+
+            # 通用云调用代理（诊断/测试用）：/cgi-bin/<path> 原样转发到 api.weixin.qq.com
+            if path.startswith("/cgi-bin/"):
+                self._send_json(200, wechat.proxy_post(path, payload))
+                return
+
+            if path not in ("/material", "/draft", "/draft-delete") and path not in _QUERY_ROUTES:
+                self._send_json(404, {"ok": False, "error": "not found"})
+                return
+
             if path == "/material":
                 result = _upload_material(payload)
             elif path == "/draft":
