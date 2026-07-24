@@ -12,13 +12,10 @@
   POST /draft-count     草稿总数 -> draft/count
   POST /draft-update    修改草稿 -> draft/update
   POST /draft-switch    草稿箱/发布开关 -> draft/switch
-  POST /published-list  已发布列表 -> freepublish/batchget
-  POST /stats-user      用户增减 -> datacube/getusersummary
-  POST /stats-article   图文阅读 -> datacube/getuserread
-  POST /comment-list    留言列表 -> comment/list
 
-  POST /cgi-bin/<path>  通用云调用代理（诊断/测试用）：原样转发到 api.weixin.qq.com/<path>，
-              返回 {'http_status':..., 'body':...}。需在「微信令牌」权限配置中加入对应路径才可用。
+  POST /cgi-bin/<path>  通用云调用代理（高级/调试用）：原样转发到 api.weixin.qq.com/<path>，
+              返回 {'http_status':..., 'body':...}。仅转发已配置且账号有权限的路径；
+              个人订阅号实测仅 draft/* + material/* 可用，其余路径需账号具备权限并加入「微信令牌」配置。
 
 /material  JSON: {"name": "img/body1.png", "data_b64": "..."}
   -> {"media_id": "...", "url": "https://mmbiz.qpic.cn/..."}
@@ -28,8 +25,7 @@
   -> {"media_id": "..."}
 
 写接口 + 查询接口都走云调用（开放接口服务）免鉴权。
-注意：freepublish/datacube/comment 部分接口可能不支持云调用，
-需在云托管「微信令牌」权限中授权对应路径，部署后实测。
+个人订阅号实测可用范围：draft/* 全套 + material/*（add/get/batchget/del/count）。
 markdown -> HTML 的转换在客户端（skill）完成，relay 不碰 markdown。
 """
 import base64
@@ -40,7 +36,7 @@ from urllib.parse import urlparse
 from app import config, wechat
 
 # 版本标记：推到 main 触发云托管重新部署后，可用 GET /health 的 version 字段确认新版本已上线。
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 
 def _upload_material(payload: dict) -> dict:
@@ -103,32 +99,13 @@ def _draft_switch(payload: dict) -> dict:
         return wechat.set_draft_switch()
     return wechat.set_draft_switch(int(status))
 
-def _list_published(payload: dict) -> dict:
-    return wechat.list_published(payload.get("offset", 0), payload.get("count", 20))
-
-def _stats_user(payload: dict) -> dict:
-    return wechat.get_user_summary(payload.get("begin_date", ""), payload.get("end_date", ""))
-
-def _stats_article(payload: dict) -> dict:
-    return wechat.get_user_read(payload.get("begin_date", ""), payload.get("end_date", ""))
-
-def _comment_list(payload: dict) -> dict:
-    return wechat.list_comments(
-        (payload.get("msg_data_id") or "").strip(),
-        payload.get("index", 0), payload.get("begin", 0), payload.get("count", 20),
-    )
-
-# 路径 -> 查询处理器
+# 路径 -> 查询处理器（个人订阅号实测可用）
 _QUERY_ROUTES = {
     "/draft-list": _list_drafts,
     "/draft-get": _get_draft,
     "/draft-count": _count_drafts,
     "/draft-update": _update_draft,
     "/draft-switch": _draft_switch,
-    "/published-list": _list_published,
-    "/stats-user": _stats_user,
-    "/stats-article": _stats_article,
-    "/comment-list": _comment_list,
 }
 
 
